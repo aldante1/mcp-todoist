@@ -17,8 +17,11 @@
     "build": "tsc && shx chmod +x dist/*.js",
     "prepare": "npm run build",
     "watch": "tsc --watch",
-    "start": "node dist/http-server.js",
+    "start": "node dist/poke-express-server.js",
+    "start:http": "node dist/http-server.js",
     "start:stdio": "node dist/index.js",
+    "start:poke": "node dist/poke-server.js",
+    "start:poke-express": "node dist/poke-express-server.js",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier --write src/**/*.ts",
@@ -47,9 +50,11 @@
   },
   "homepage": "https://github.com/greirson/mcp-todoist#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.17.1",
     "@doist/todoist-api-typescript": "^5.1.1",
-    "express": "^4.21.2"
+    "@modelcontextprotocol/sdk": "1.17.1",
+    "express": "^4.21.2",
+    "fastmcp": "^1.27.7",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",

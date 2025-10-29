@@ -499,8 +499,26 @@ async function runHTTPServer(): Promise<void> {
   // Handle SSE messages (protected with authentication)
   app.post('/message', authenticate, async (req, res) => {
     try {
+      console.log('Received MCP request:', JSON.stringify(req.body, null, 2));
+      
       // Parse the request body
       const message = req.body;
+      
+      if (!message || typeof message !== 'object') {
+        console.error('Invalid message format:', message);
+        res.status(400).json({
+          jsonrpc: "2.0",
+          id: null,
+          error: {
+            code: -32600,
+            message: "Invalid Request",
+            data: "Message must be a valid JSON object"
+          }
+        });
+        return;
+      }
+      
+      console.log('Processing method:', message.method);
       
       // Create a mock request object for the MCP server
       const mockRequest = {
@@ -513,6 +531,7 @@ async function runHTTPServer(): Promise<void> {
       // Handle different request types
       let response;
       if (message.method === 'tools/list') {
+        console.log('Returning tools list, count:', ALL_TOOLS.length);
         response = {
           jsonrpc: "2.0",
           id: message.id,
@@ -524,6 +543,8 @@ async function runHTTPServer(): Promise<void> {
         // Handle tool calls
         const toolName = message.params?.name;
         const toolArgs = message.params?.arguments || {};
+        
+        console.log(`Executing tool: ${toolName} with args:`, JSON.stringify(toolArgs, null, 2));
         
         try {
           let result;
@@ -786,14 +807,18 @@ async function runHTTPServer(): Promise<void> {
       }
       
       // Send the response back
+      console.log('Sending response:', JSON.stringify(response, null, 2));
+      
       if (response) {
         res.json(response);
       } else {
-        res.json({
+        const fallbackResponse = {
           jsonrpc: "2.0",
           id: message.id,
           result: { success: true }
-        });
+        };
+        console.log('Sending fallback response:', JSON.stringify(fallbackResponse, null, 2));
+        res.json(fallbackResponse);
       }
     } catch (error) {
       console.error('Error processing MCP request:', error);
