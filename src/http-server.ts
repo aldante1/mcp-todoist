@@ -395,6 +395,9 @@ async function runHTTPServer(): Promise<void> {
   // Health check endpoint should work even without auth
   const app = express();
 
+  // Middleware to parse JSON bodies
+  app.use(express.json());
+
   // Health check endpoint for Railway (always available)
   app.get('/health', (_req, res) => {
     res.json({
@@ -495,8 +498,27 @@ async function runHTTPServer(): Promise<void> {
 
   // Handle SSE messages (protected with authentication)
   app.post('/message', authenticate, async (req, res) => {
-    // SSE transport handles this internally
-    res.status(200).end();
+    try {
+      // Parse the request body
+      const message = req.body;
+      
+      // Forward to MCP server for processing
+      const response = await mcpServer.request(message);
+      
+      // Send the response back
+      res.json(response);
+    } catch (error) {
+      console.error('Error processing MCP request:', error);
+      res.status(500).json({
+        jsonrpc: '2.0',
+        id: req.body?.id || null,
+        error: {
+          code: -32603,
+          message: 'Internal error',
+          data: error instanceof Error ? error.message : 'Unknown error'
+        }
+      });
+    }
   });
 
   // Get port from environment (Railway sets this automatically)
