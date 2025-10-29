@@ -502,8 +502,92 @@ async function runHTTPServer(): Promise<void> {
       // Parse the request body
       const message = req.body;
       
-      // Forward to MCP server for processing
-      const response = await mcpServer.request(message);
+      // Create a mock request object for the MCP server
+      const mockRequest = {
+        jsonrpc: "2.0",
+        id: message.id,
+        method: message.method,
+        params: message.params || {}
+      };
+
+      // Handle different request types
+      let response;
+      if (message.method === 'tools/list') {
+        response = {
+          jsonrpc: "2.0",
+          id: message.id,
+          result: {
+            tools: ALL_TOOLS
+          }
+        };
+      } else if (message.method === 'tools/call') {
+        // Handle tool calls
+        const toolName = message.params?.name;
+        const toolArgs = message.params?.arguments || {};
+        
+        try {
+          let result;
+          switch (toolName) {
+            case 'todoist_task_create':
+              if (!isCreateTaskArgs(toolArgs)) {
+                throw new Error("Invalid arguments for todoist_task_create");
+              }
+              result = await handleCreateTask(apiClient, toolArgs);
+              break;
+            
+            case 'todoist_task_get':
+              if (!isGetTasksArgs(toolArgs)) {
+                throw new Error("Invalid arguments for todoist_task_get");
+              }
+              result = await handleGetTasks(apiClient, toolArgs);
+              break;
+            
+            case 'todoist_test_connection':
+              result = await handleTestConnection(apiClient);
+              break;
+            
+            default:
+              response = {
+                jsonrpc: "2.0",
+                id: message.id,
+                error: {
+                  code: -32601,
+                  message: "Method not found",
+                  data: `Tool ${toolName} not found`
+                }
+              };
+              break;
+          }
+          
+          if (result) {
+            response = {
+              jsonrpc: "2.0",
+              id: message.id,
+              result: result
+            };
+          }
+        } catch (toolError) {
+          response = {
+            jsonrpc: "2.0",
+            id: message.id,
+            error: {
+              code: -32602,
+              message: "Invalid params",
+              data: toolError instanceof Error ? toolError.message : 'Unknown tool error'
+            }
+          };
+        }
+      } else {
+        response = {
+          jsonrpc: "2.0",
+          id: message.id,
+          error: {
+            code: -32601,
+            message: "Method not found",
+            data: `Method ${message.method} not found`
+          }
+        };
+      }
       
       // Send the response back
       res.json(response);
