@@ -5,9 +5,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies first
+# Install dependencies without running prepare script
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 # Copy source files and build
 COPY src ./src
