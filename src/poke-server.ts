@@ -919,13 +919,16 @@ console.log(`Starting Todoist MCP Server for Poke on port ${PORT}`);
 console.log(`Poke endpoint: http://localhost:${PORT}/mcp`);
 console.log(`Authentication: ${MCP_AUTH_TOKEN ? 'Enabled' : 'Disabled (WARNING)'}`);
 
-server.start({
-  transportType: "httpStream",
+// Configure FastMCP for Poke compatibility
+const serverConfig = {
+  transportType: "httpStream" as const,
   httpStream: {
-    endpoint: "/mcp",
+    endpoint: "/mcp" as const,
     port: PORT,
-  },
-}).catch((error) => {
+  }
+};
+
+server.start(serverConfig).catch((error) => {
   console.error('Failed to start server:', error);
   process.exit(1);
 });
