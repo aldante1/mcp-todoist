@@ -392,11 +392,31 @@ function createMCPServer(todoistClient: TodoistApi) {
 }
 
 async function runHTTPServer(): Promise<void> {
+  // Health check endpoint should work even without auth
+  const app = express();
+
+  // Health check endpoint for Railway (always available)
+  app.get('/health', (_req, res) => {
+    res.json({
+      status: 'healthy',
+      service: 'todoist-mcp-server',
+      version: '0.8.8',
+      transport: 'sse'
+    });
+  });
+
   // Check for API token
   const TODOIST_API_TOKEN = process.env.TODOIST_API_TOKEN;
   if (!TODOIST_API_TOKEN) {
     console.error("Error: TODOIST_API_TOKEN environment variable is required");
-    process.exit(1);
+    console.error("Server running in health-only mode - MCP endpoints unavailable");
+    // Don't exit, just run with health endpoint
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+      console.log(`Todoist MCP Server running in health-only mode on port ${PORT}`);
+      console.log(`Health check: http://localhost:${PORT}/health`);
+    });
+    return;
   }
 
   // Check for MCP auth token (required for production security)
@@ -404,7 +424,14 @@ async function runHTTPServer(): Promise<void> {
   if (!MCP_AUTH_TOKEN) {
     console.error("Error: MCP_AUTH_TOKEN environment variable is required");
     console.error("Generate a secure token with: openssl rand -base64 32");
-    process.exit(1);
+    console.error("Server running in health-only mode - MCP endpoints unavailable");
+    // Don't exit, just run with health endpoint
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+      console.log(`Todoist MCP Server running in health-only mode on port ${PORT}`);
+      console.log(`Health check: http://localhost:${PORT}/health`);
+    });
+    return;
   }
 
   // Initialize Todoist client (with optional dry-run wrapper)
@@ -413,9 +440,6 @@ async function runHTTPServer(): Promise<void> {
 
   // Create MCP server
   const mcpServer = createMCPServer(apiClient);
-
-  // Create Express app
-  const app = express();
 
   // Authentication middleware for protected endpoints
   const authenticate = (req: express.Request, res: express.Response, next: express.NextFunction): void => {
@@ -444,16 +468,6 @@ async function runHTTPServer(): Promise<void> {
 
     next();
   };
-
-  // Health check endpoint for Railway
-  app.get('/health', (_req, res) => {
-    res.json({
-      status: 'healthy',
-      service: 'todoist-mcp-server',
-      version: '0.8.8',
-      transport: 'sse'
-    });
-  });
 
   // Root endpoint with info
   app.get('/', (_req, res) => {
