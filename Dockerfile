@@ -1,7 +1,5 @@
-# Multi-purpose Dockerfile for MCP Todoist Server
-# - Default (Railway): HTTP/SSE server on port from env
-# - Smithery: stdio transport# Use Node.js 18 Alpine as base image
-FROM node:18-alpine AS builder
+# Use Node.js 20 Alpine as base image (more compatible with FastMCP)
+FROM node:20-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -16,7 +14,7 @@ COPY tsconfig.json ./
 RUN npm run build && npm prune --omit=dev
 
 # Production stage
-FROM node:18-alpine AS production
+FROM node:20-alpine AS production
 
 # Install dumb-init for proper signal handling
 RUN apk add --no-cache dumb-init

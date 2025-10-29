@@ -1,4 +1,7 @@
 // Express wrapper for Poke MCP Server with health endpoint
+// Import polyfills first
+import "./polyfills.js";
+
 import express from "express";
 import { createServer } from "http";
 import { spawn } from "child_process";

@@ -10,5 +10,12 @@
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 5
+  },
+  "environments": {
+    "production": {
+      "variables": {
+        "NODE_OPTIONS": "--enable-source-maps"
+      }
+    }
   }
 }

@@ -1,6 +1,9 @@
 // Poke-compatible Todoist MCP Server using FastMCP
 // This version is specifically designed for Poke integration with /mcp endpoint
 
+// Import polyfills first
+import "./polyfills.js";
+
 import { FastMCP } from "fastmcp";
 import { z } from "zod";
 import { TodoistApi } from "@doist/todoist-api-typescript";

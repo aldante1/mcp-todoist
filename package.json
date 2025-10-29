@@ -56,6 +56,9 @@
     "fastmcp": "^1.27.7",
     "zod": "^3.25.76"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "devDependencies": {
     "@eslint/js": "^9.27.0",
     "@types/express": "^5.0.0",
