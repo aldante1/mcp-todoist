@@ -7,9 +7,10 @@ A fully-featured MCP (Model Context Protocol) server for Todoist API, optimized 
 - 🔗 **Poke Compatible** - Uses FastMCP framework with `/mcp` endpoint
 - 🔐 **Bearer Token Authentication** - Secure via `MCP_AUTH_TOKEN`
 - 🏥 **Health Monitoring** - Built-in health checks for Railway
-- 🛠️ **8 Tools Available** - Complete Todoist task management
+- 🛠️ **29 Tools Available** - Complete Todoist task management
 - 🚀 **Railway Ready** - Optimized Docker deployment
 - 📊 **Express Wrapper** - Health endpoint + MCP server
+- 📅 **Daily Overview** - Combined tool for complete task summaries
 
 ## 🛠️ Available Tools
 
@@ -17,6 +18,7 @@ A fully-featured MCP (Model Context Protocol) server for Todoist API, optimized 
 |------|-------------|
 | `create_task` | Create tasks with full parameters |
 | `get_tasks` | Retrieve and filter tasks |
+| `get_daily_overview` | **Complete daily task summary** - overdue, today, upcoming |
 | `update_task` | Update existing tasks |
 | `complete_task` | Mark tasks complete |
 | `delete_task` | Remove tasks |
@@ -97,6 +99,12 @@ Once connected to Poke, you can use natural language:
 > "Complete the task 'Submit report' and create a follow-up task for next week"
 
 > "Get all my projects and their task counts"
+
+> "Show me my daily task overview"
+
+> "What tasks are overdue today?"
+
+> "Give me a summary of my tasks for this week"
 
 ## 🐛 Troubleshooting
 

@@ -9,6 +9,7 @@ import {
   createTodoistClient,
   type TodoistClient,
 } from "./utils/dry-run-wrapper.js";
+import { extractArray, formatArrayResponse } from "./utils/array-helpers.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -105,7 +106,7 @@ app.get('/', (req, res) => {
       health: '/health',
       mcp: '/mcp'
     },
-    tools: 28,
+    tools: 29,
     authentication: !!MCP_AUTH_TOKEN
   });
 });
@@ -459,11 +460,15 @@ app.post('/mcp', authenticate, async (req, res) => {
             },
             // Testing
             {
-              name: "test_connection",
-              description: "Test Todoist API connection",
+              name: "get_daily_overview",
+              description: "Get complete daily task overview including overdue, today's, and upcoming tasks. Use this for daily summaries instead of multiple calls.",
               inputSchema: {
                 type: "object",
-                properties: {}
+                properties: {
+                  date: { type: "string", description: "Date in ISO format (YYYY-MM-DD), defaults to today" },
+                  include_projects: { type: "boolean", description: "Include project names in results, defaults to true" },
+                  limit: { type: "number", description: "Maximum tasks per section, defaults to 10" }
+                }
               }
             },
             {
@@ -523,19 +528,13 @@ app.post('/mcp', authenticate, async (req, res) => {
               const tasks = await apiClient.getTasks({
                 projectId: toolArgs.project_id,
               });
-              const tasksArray = tasks as unknown as any[];
-              if (!tasksArray || tasksArray.length === 0) {
-                result = "No tasks found matching the criteria.";
-              } else {
-                const taskList = tasksArray.map((task: any) => {
-                  const status = task.isCompleted ? "✓" : "○";
-                  const priority = task.priority ? `P${task.priority}` : "P4";
-                  const due = task.due?.string || "";
-                  const project = task.projectId || "Inbox";
-                  return `${status} [${priority}] ${task.content} (ID: ${task.id}) - ${project}${due ? ` - Due: ${due}` : ""}`;
-                }).join("\n");
-                result = `Found ${tasksArray.length} task(s):\n${taskList}`;
-              }
+              result = formatArrayResponse(tasks, "task", (task: any) => {
+                const status = task.isCompleted ? "✓" : "○";
+                const priority = task.priority ? `P${task.priority}` : "P4";
+                const due = task.due?.string || "";
+                const project = task.projectId || "Inbox";
+                return `${status} [${priority}] ${task.content} (ID: ${task.id}) - ${project}${due ? ` - Due: ${due}` : ""}`;
+              });
               break;
 
             case "update_task":
@@ -560,23 +559,131 @@ app.post('/mcp', authenticate, async (req, res) => {
 
             case "get_projects":
               const projects = await apiClient.getProjects();
-              const projectsArray = projects as unknown as any[];
-              if (!projectsArray || projectsArray.length === 0) {
-                result = "No projects found.";
-              } else {
-                const projectList = projectsArray.map((project: any) => {
-                  const color = project.color ? `🎨` : "";
-                  return `${project.name} (ID: ${project.id}) ${color}`;
-                }).join("\n");
-                result = `Found ${projectsArray.length} project(s):\n${projectList}`;
-              }
+              result = formatArrayResponse(projects, "project", (project: any) => {
+                const color = project.color ? `🎨` : "";
+                return `${project.name} (ID: ${project.id}) ${color}`;
+              });
               break;
 
             case "test_connection":
               const testProjects = await apiClient.getProjects();
-              const testProjectsArray = testProjects as unknown as any[];
-              const projectCount = testProjectsArray ? testProjectsArray.length : 0;
+              const projectCount = extractArray(testProjects).length;
               result = `✅ Connection successful! Found ${projectCount} projects in your Todoist account.`;
+              break;
+
+            case "get_daily_overview":
+              const dailyDate = toolArgs.date || new Date().toISOString().split('T')[0];
+              const dailyLimit = toolArgs.limit || 10;
+              const includeProjects = toolArgs.include_projects !== false;
+
+              // Get all tasks (we'll filter client-side since API doesn't have good date filtering)
+              const dailyAllTasks = await apiClient.getTasks();
+              const dailyTasksArray = extractArray(dailyAllTasks);
+
+              const now = new Date();
+              const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+              const tomorrow = new Date(today);
+              tomorrow.setDate(tomorrow.getDate() + 1);
+
+              // Categorize tasks
+              const overview = {
+                date: dailyDate,
+                overdue: [] as any[],
+                today: [] as any[],
+                upcoming: [] as any[],
+                completed_today: [] as any[],
+                total_counts: {
+                  overdue: 0,
+                  today: 0,
+                  upcoming: 0,
+                  completed_today: 0
+                }
+              };
+
+              for (const task of dailyTasksArray) {
+                if (!task) continue;
+
+                const taskDate = task.due?.date ? new Date(task.due.date) : null;
+
+                // Overdue tasks
+                if (taskDate && taskDate < today && !task.isCompleted) {
+                  overview.overdue.push(task);
+                  overview.total_counts.overdue++;
+                }
+                // Today's tasks
+                else if (taskDate && taskDate.toDateString() === today.toDateString() && !task.isCompleted) {
+                  overview.today.push(task);
+                  overview.total_counts.today++;
+                }
+                // Upcoming tasks (next 7 days)
+                else if (taskDate && taskDate >= tomorrow && taskDate <= new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000) && !task.isCompleted) {
+                  overview.upcoming.push(task);
+                  overview.total_counts.upcoming++;
+                }
+                // Completed today
+                else if (taskDate && taskDate.toDateString() === today.toDateString() && task.isCompleted) {
+                  overview.completed_today.push(task);
+                  overview.total_counts.completed_today++;
+                }
+              }
+
+              // Sort and limit results
+              const sortByPriority = (a: any, b: any) => (a.priority || 4) - (b.priority || 4);
+              overview.overdue = overview.overdue.sort(sortByPriority).slice(0, dailyLimit);
+              overview.today = overview.today.sort(sortByPriority).slice(0, dailyLimit);
+              overview.upcoming = overview.upcoming.sort(sortByPriority).slice(0, dailyLimit);
+              overview.completed_today = overview.completed_today.slice(0, dailyLimit);
+
+              // Format response
+              let dailyResult = `📅 Daily Overview for ${dailyDate}:\n\n`;
+
+              if (overview.total_counts.overdue > 0) {
+                dailyResult += `🚨 OVERDUE (${overview.total_counts.overdue} total):\n`;
+                overview.overdue.forEach(task => {
+                  const priority = task.priority ? `P${task.priority}` : "P4";
+                  const project = includeProjects && task.projectId ? ` [${task.projectId}]` : "";
+                  const due = task.due?.string ? ` - Due: ${task.due.string}` : "";
+                  dailyResult += `• ${priority} ${task.content}${project}${due}\n`;
+                });
+                dailyResult += "\n";
+              }
+
+              if (overview.total_counts.today > 0) {
+                dailyResult += `📝 TODAY (${overview.total_counts.today} total):\n`;
+                overview.today.forEach(task => {
+                  const priority = task.priority ? `P${task.priority}` : "P4";
+                  const project = includeProjects && task.projectId ? ` [${task.projectId}]` : "";
+                  const due = task.due?.string ? ` - Due: ${task.due.string}` : "";
+                  dailyResult += `• ${priority} ${task.content}${project}${due}\n`;
+                });
+                dailyResult += "\n";
+              }
+
+              if (overview.total_counts.upcoming > 0) {
+                dailyResult += `📅 UPCOMING (${overview.total_counts.upcoming} total):\n`;
+                overview.upcoming.forEach(task => {
+                  const priority = task.priority ? `P${task.priority}` : "P4";
+                  const project = includeProjects && task.projectId ? ` [${task.projectId}]` : "";
+                  const due = task.due?.string ? ` - Due: ${task.due.string}` : "";
+                  dailyResult += `• ${priority} ${task.content}${project}${due}\n`;
+                });
+                dailyResult += "\n";
+              }
+
+              if (overview.total_counts.completed_today > 0) {
+                dailyResult += `✅ COMPLETED TODAY (${overview.total_counts.completed_today} total):\n`;
+                overview.completed_today.forEach(task => {
+                  const project = includeProjects && task.projectId ? ` [${task.projectId}]` : "";
+                  dailyResult += `• ✓ ${task.content}${project}\n`;
+                });
+              }
+
+              if (overview.total_counts.overdue === 0 && overview.total_counts.today === 0 &&
+                  overview.total_counts.upcoming === 0 && overview.total_counts.completed_today === 0) {
+                dailyResult += "🎉 No tasks found for today! You're all caught up.\n";
+              }
+
+              result = dailyResult;
               break;
 
             case "health_check":
@@ -587,7 +694,7 @@ app.post('/mcp', authenticate, async (req, res) => {
                 transport: 'http',
                 endpoint: '/mcp',
                 authentication: MCP_AUTH_TOKEN ? 'enabled' : 'disabled',
-                tools: 28,
+                tools: 29,
                 timestamp: new Date().toISOString(),
                 todoist_api: 'connected'
               }, null, 2);
@@ -647,7 +754,7 @@ app.listen(PORT, () => {
   console.log(`📡 MCP endpoint: http://localhost:${PORT}/mcp`);
   console.log(`❤️  Health check: http://localhost:${PORT}/health`);
   console.log(`🔐 Authentication: ${MCP_AUTH_TOKEN ? 'Enabled' : 'Disabled (WARNING)'}`);
-  console.log(`🛠️  Available tools: 28`);
+  console.log(`🛠️  Available tools: 29`);
 });
 
 // Graceful shutdown

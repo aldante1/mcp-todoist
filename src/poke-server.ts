@@ -25,10 +25,18 @@ const MCP_AUTH_TOKEN = process.env.MCP_AUTH_TOKEN;
 const todoistClient = createTodoistClient(TODOIST_API_TOKEN);
 const apiClient = todoistClient as TodoistApi;
 
-// Create FastMCP server with authentication
+// Create FastMCP server with authentication and instructions
 const server = new FastMCP({
   name: "Todoist Task Manager",
   version: "1.0.0",
+  instructions: [
+    "All dates in ISO 8601 format (UTC). Tasks without due date are not urgent.",
+    "Priority levels: 1=highest (red), 2=high (orange), 3=medium (yellow), 4=lowest (blue).",
+    "Use get_tasks for overviews, get_task for details. Use get_daily_overview for complete daily summary.",
+    "Rate limit: 50 requests/min. Batch operations with bulk_* tools when possible.",
+    "Project 'Inbox' is default for tasks without project. Completed tasks have isCompleted=true.",
+    "Labels are optional, use them for categorization. Tasks can have multiple labels."
+  ].join(" ")
 });
 
 // Log authentication status
@@ -203,16 +211,146 @@ server.addTool({
 // Tool: Test Connection
 server.addTool({
   name: "test_connection",
-  description: "Test the connection to Todoist API",
+  description: "Test the connection to Todoist API and get account info",
   parameters: z.object({}),
   execute: async () => {
     try {
       const projects = await apiClient.getProjects();
       const projectsArray = projects as unknown as any[];
-      const projectCount = projectsArray ? projectsArray.length : 0;
+      const projectCount = Array.isArray(projects) ? projects.length : (projects as any)?.results?.length || 0;
       return `✅ Connection successful! Found ${projectCount} projects in your Todoist account.`;
     } catch (error) {
       throw new Error(`❌ Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  },
+});
+
+// Tool: Get Daily Overview (Combined tool for daily task summary)
+server.addTool({
+  name: "get_daily_overview",
+  description: "Get complete daily task overview including overdue, today's, and upcoming tasks. Use this for daily summaries instead of multiple calls.",
+  parameters: z.object({
+    date: z.string().optional().describe("Date in ISO format (YYYY-MM-DD), defaults to today"),
+    include_projects: z.boolean().optional().describe("Include project names in results, defaults to true"),
+    limit: z.number().optional().describe("Maximum tasks per section, defaults to 10")
+  }),
+  execute: async (args) => {
+    try {
+      const targetDate = args.date || new Date().toISOString().split('T')[0];
+      const limit = args.limit || 10;
+      const includeProjects = args.include_projects !== false;
+
+      // Get all tasks (we'll filter client-side since API doesn't have good date filtering)
+      const allTasks = await apiClient.getTasks();
+      const tasksArray = Array.isArray(allTasks) ? allTasks : (allTasks as any)?.results || [];
+
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      // Categorize tasks
+      const overview = {
+        date: targetDate,
+        overdue: [] as any[],
+        today: [] as any[],
+        upcoming: [] as any[],
+        completed_today: [] as any[],
+        total_counts: {
+          overdue: 0,
+          today: 0,
+          upcoming: 0,
+          completed_today: 0
+        }
+      };
+
+      for (const task of tasksArray) {
+        if (!task) continue;
+
+        const taskDate = task.due?.date ? new Date(task.due.date) : null;
+
+        // Overdue tasks
+        if (taskDate && taskDate < today && !task.isCompleted) {
+          overview.overdue.push(task);
+          overview.total_counts.overdue++;
+        }
+        // Today's tasks
+        else if (taskDate && taskDate.toDateString() === today.toDateString() && !task.isCompleted) {
+          overview.today.push(task);
+          overview.total_counts.today++;
+        }
+        // Upcoming tasks (next 7 days)
+        else if (taskDate && taskDate >= tomorrow && taskDate <= new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000) && !task.isCompleted) {
+          overview.upcoming.push(task);
+          overview.total_counts.upcoming++;
+        }
+        // Completed today
+        else if (taskDate && taskDate.toDateString() === today.toDateString() && task.isCompleted) {
+          overview.completed_today.push(task);
+          overview.total_counts.completed_today++;
+        }
+      }
+
+      // Sort and limit results
+      const sortByPriority = (a: any, b: any) => (a.priority || 4) - (b.priority || 4);
+      overview.overdue = overview.overdue.sort(sortByPriority).slice(0, limit);
+      overview.today = overview.today.sort(sortByPriority).slice(0, limit);
+      overview.upcoming = overview.upcoming.sort(sortByPriority).slice(0, limit);
+      overview.completed_today = overview.completed_today.slice(0, limit);
+
+      // Format response
+      let result = `📅 Daily Overview for ${targetDate}:\n\n`;
+
+      if (overview.total_counts.overdue > 0) {
+        result += `🚨 OVERDUE (${overview.total_counts.overdue} total):\n`;
+        overview.overdue.forEach(task => {
+          const priority = task.priority ? `P${task.priority}` : "P4";
+          const project = includeProjects && task.projectId ? ` [${task.projectId}]` : "";
+          const due = task.due?.string ? ` - Due: ${task.due.string}` : "";
+          result += `• ${priority} ${task.content}${project}${due}\n`;
+        });
+        result += "\n";
+      }
+
+      if (overview.total_counts.today > 0) {
+        result += `📝 TODAY (${overview.total_counts.today} total):\n`;
+        overview.today.forEach(task => {
+          const priority = task.priority ? `P${task.priority}` : "P4";
+          const project = includeProjects && task.projectId ? ` [${task.projectId}]` : "";
+          const due = task.due?.string ? ` - Due: ${task.due.string}` : "";
+          result += `• ${priority} ${task.content}${project}${due}\n`;
+        });
+        result += "\n";
+      }
+
+      if (overview.total_counts.upcoming > 0) {
+        result += `📅 UPCOMING (${overview.total_counts.upcoming} total):\n`;
+        overview.upcoming.forEach(task => {
+          const priority = task.priority ? `P${task.priority}` : "P4";
+          const project = includeProjects && task.projectId ? ` [${task.projectId}]` : "";
+          const due = task.due?.string ? ` - Due: ${task.due.string}` : "";
+          result += `• ${priority} ${task.content}${project}${due}\n`;
+        });
+        result += "\n";
+      }
+
+      if (overview.total_counts.completed_today > 0) {
+        result += `✅ COMPLETED TODAY (${overview.total_counts.completed_today} total):\n`;
+        overview.completed_today.forEach(task => {
+          const project = includeProjects && task.projectId ? ` [${task.projectId}]` : "";
+          result += `• ✓ ${task.content}${project}\n`;
+        });
+      }
+
+      if (overview.total_counts.overdue === 0 && overview.total_counts.today === 0 &&
+          overview.total_counts.upcoming === 0 && overview.total_counts.completed_today === 0) {
+        result += "🎉 No tasks found for today! You're all caught up.\n";
+      }
+
+      return result;
+
+    } catch (error) {
+      throw new Error(`Failed to get daily overview: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   },
 });
@@ -230,7 +368,7 @@ server.addTool({
       transport: 'httpStream',
       endpoint: '/mcp',
       authentication: MCP_AUTH_TOKEN ? 'enabled' : 'disabled',
-      tools: 28,
+      tools: 29,
       timestamp: new Date().toISOString(),
       todoist_api: 'connected'
     };
