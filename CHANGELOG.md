@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Railway Deployment Support**: Cloud deployment capabilities for HTTP/SSE access
+  - Created `src/http-server.ts` - HTTP server with SSE transport for Railway deployment
+  - Added Express.js dependency for HTTP endpoint handling
+  - Implemented health check endpoint at `/health` for Railway monitoring
+  - Created server info endpoint at `/` with service details
+  - SSE endpoint at `/sse` for MCP protocol over HTTP
+  - Comprehensive deployment guide in `RAILWAY.md`
+  - Railway configuration in `railway.json` with health checks and restart policies
+  - Added `Procfile` for Railway process configuration
+  - Created `.railwayignore` for optimized deployments
+  - Created `.env.example` with all environment variables and security best practices
+  - Updated `Dockerfile` to support both stdio (Smithery) and HTTP (Railway) modes
+  - New npm scripts:
+    - `npm start` - launches HTTP server for Railway
+    - `npm run start:stdio` - launches stdio server for local Claude Desktop
+
+### Security
+- **HTTP Authentication**: Added bearer token authentication for HTTP/SSE endpoints
+  - New required environment variable: `MCP_AUTH_TOKEN`
+  - All MCP endpoints (`/sse`, `/message`) require `Authorization: Bearer TOKEN` header
+  - Public endpoints (`/health`, `/`) remain accessible without authentication
+  - Prevents unauthorized access to MCP server in cloud deployments
+  - Returns 401 Unauthorized for missing auth header
+  - Returns 403 Forbidden for invalid tokens
+- **Environment Protection**: `.env` files already in `.gitignore` (line 8)
+- **Token Generation**: Documentation includes secure token generation commands
+
+### Changed
+- **Dual Transport Support**: Server now supports both stdio (local) and HTTP/SSE (cloud) transports
+- **Updated README.md**: Added Railway deployment section with security notes
+- **Updated RAILWAY.md**: Comprehensive security and authentication documentation
+- **Updated Dockerfile**: Changed default CMD to `npm start` for Railway compatibility
+- **Updated tsconfig.json**: Changed include from `src/index.ts` to `src/**/*.ts` for full compilation
+
+### Technical Implementation
+- **HTTP/SSE Architecture**: Express server wrapping MCP Server with SSE transport
+- **Authentication Middleware**: Express middleware for bearer token validation
+- **Environment Variables**: Supports `PORT` (Railway), `MCP_AUTH_TOKEN` (security), `TODOIST_API_TOKEN`, `DRYRUN`
+- **Health Monitoring**: `/health` endpoint returns service status and version
+- **Multi-client Support**: HTTP/SSE allows multiple concurrent MCP clients
+- **Backward Compatibility**: Stdio mode still available via `npm run start:stdio`
+
 ## [0.8.8] - 2025-01-24
 
 ### Fixed
