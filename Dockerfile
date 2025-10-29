@@ -5,11 +5,13 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies and build the TypeScript project
-COPY package.json package-lock.json tsconfig.json ./
+# Install dependencies first
+COPY package.json package-lock.json ./
 RUN npm ci
 
+# Copy source files and build
 COPY src ./src
+COPY tsconfig.json ./
 RUN npm run build && npm prune --omit=dev
 
 # Expose port for Railway deployment
