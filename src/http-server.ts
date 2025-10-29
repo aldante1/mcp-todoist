@@ -749,11 +749,17 @@ async function runHTTPServer(): Promise<void> {
               break;
           }
           
-          if (result) {
+          if (result !== undefined) {
             response = {
               jsonrpc: "2.0",
               id: message.id,
               result: result
+            };
+          } else {
+            response = {
+              jsonrpc: "2.0",
+              id: message.id,
+              result: { success: true }
             };
           }
         } catch (toolError) {
@@ -780,7 +786,15 @@ async function runHTTPServer(): Promise<void> {
       }
       
       // Send the response back
-      res.json(response);
+      if (response) {
+        res.json(response);
+      } else {
+        res.json({
+          jsonrpc: "2.0",
+          id: message.id,
+          result: { success: true }
+        });
+      }
     } catch (error) {
       console.error('Error processing MCP request:', error);
       res.status(500).json({
